@@ -1,0 +1,19 @@
+[project]
+name = "tests"
+version = "0.1.0"
+description = "Test Cases"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "branchlayerflow",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=6.2.1",
+]

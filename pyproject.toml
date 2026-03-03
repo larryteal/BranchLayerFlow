@@ -1,0 +1,24 @@
+[project]
+name = "branchlayerflow"
+version = "0.1.0"
+description = "Branch Layer Flow"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    { name = "Larry Li" }
+]
+
+dependencies = [
+    "pydantic>=2.11.7",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv.workspace]
+members = [
+    "tests",
+    "examples/*",
+]

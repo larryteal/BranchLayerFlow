@@ -1,0 +1,21 @@
+[project]
+name = "turtle-soup"
+version = "0.1.0"
+description = "turtle soup game"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "beautifulsoup4>=4.13.4",
+    "branchlayerflow",
+    "dicttoxml>=1.7.16",
+    "fastapi>=0.116.1",
+    "lxml>=6.0.0",
+    "openai>=1.98.0",
+    "pydantic>=2.11.7",
+    "python-dotenv>=1.1.1",
+    "uvicorn>=0.35.0",
+    "xmltodict>=0.14.2",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

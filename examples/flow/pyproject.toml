@@ -1,0 +1,10 @@
+[project]
+name = "blf-example-flow"
+version = "0.1.0"
+description = "Interactive text-transformer with two agents passing the baton until the user quits."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["branchlayerflow"]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

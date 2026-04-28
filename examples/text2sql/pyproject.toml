@@ -1,0 +1,13 @@
+[project]
+name = "blf-example-text2sql"
+version = "0.1.0"
+description = "NL question -> SQLite schema-aware SQL -> execute, with LLM debug-and-retry on errors."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "branchlayerflow",
+    "openai>=1.0",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

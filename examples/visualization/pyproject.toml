@@ -1,0 +1,10 @@
+[project]
+name = "blf-example-visualization"
+version = "0.1.0"
+description = "Render any BLF flow's static structure (branches + registered successors) as a Mermaid diagram."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["branchlayerflow"]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

@@ -1,0 +1,16 @@
+[project]
+name = "blf-example-fastapi-websocket"
+version = "0.1.0"
+description = "FastAPI WebSocket chat: client sends a message, server streams the assistant's reply chunk-by-chunk."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "branchlayerflow",
+    "openai>=1.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "websockets",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

@@ -1,0 +1,10 @@
+[project]
+name = "blf-example-tracing"
+version = "0.1.0"
+description = "Decorator-based tracing for BLF agents and flows. Captures takeover/handoff durations and per-step state diffs."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["branchlayerflow"]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

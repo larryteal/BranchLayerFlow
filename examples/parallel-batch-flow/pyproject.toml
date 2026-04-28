@@ -1,0 +1,13 @@
+[project]
+name = "blf-example-parallel-batch-flow"
+version = "0.1.0"
+description = "Parallel image processing: each (image, filter) pair runs its own sub-flow concurrently."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "branchlayerflow",
+    "Pillow>=10.0",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

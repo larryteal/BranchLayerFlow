@@ -1,0 +1,15 @@
+[project]
+name = "blf-example-tool-pdf-vision"
+version = "0.1.0"
+description = "Convert PDF pages to images and run them through GPT-4o vision for OCR/extraction."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "branchlayerflow",
+    "openai>=1.0",
+    "pdf2image>=1.17",
+    "Pillow>=10.0",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

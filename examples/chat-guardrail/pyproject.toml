@@ -1,0 +1,13 @@
+[project]
+name = "blf-example-chat-guardrail"
+version = "0.1.0"
+description = "Travel-only chatbot. A guardrail agent rejects off-topic queries before they reach the advisor."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "branchlayerflow",
+    "openai>=1.0",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

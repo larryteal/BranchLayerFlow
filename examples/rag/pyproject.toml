@@ -1,0 +1,15 @@
+[project]
+name = "blf-example-rag"
+version = "0.1.0"
+description = "Two-phase RAG: Index documents into FAISS offline, then answer queries with retrieved context."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "branchlayerflow",
+    "openai>=1.0",
+    "numpy>=1.20",
+    "faiss-cpu>=1.7",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

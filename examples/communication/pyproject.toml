@@ -1,0 +1,10 @@
+[project]
+name = "blf-example-communication"
+version = "0.1.0"
+description = "Three agents talking via the shared `store`: input -> count -> report, in a loop."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["branchlayerflow"]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

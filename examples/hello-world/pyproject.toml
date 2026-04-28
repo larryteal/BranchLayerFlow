@@ -1,0 +1,13 @@
+[project]
+name = "blf-example-hello-world"
+version = "0.1.0"
+description = "Single-agent QA: read a question from the store, call an LLM, write the answer back."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "branchlayerflow",
+    "openai>=1.0",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

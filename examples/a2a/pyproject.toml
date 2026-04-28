@@ -1,0 +1,16 @@
+[project]
+name = "blf-example-a2a"
+version = "0.1.0"
+description = "Wrap a BLF research flow behind an A2A-style HTTP/JSON-RPC endpoint."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "branchlayerflow",
+    "openai>=1.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "httpx>=0.27",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

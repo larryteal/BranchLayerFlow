@@ -1,0 +1,13 @@
+[project]
+name = "blf-example-tao"
+version = "0.1.0"
+description = "Thought / Action / Observation loop. Three agents form one TAO cycle, the cycle repeats until the problem is solved."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "branchlayerflow",
+    "openai>=1.0",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

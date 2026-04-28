@@ -1,0 +1,10 @@
+[project]
+name = "blf-example-tool-database"
+version = "0.1.0"
+description = "SQLite-backed task manager via parameterised queries inside agents."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["branchlayerflow"]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

@@ -1,0 +1,10 @@
+[project]
+name = "blf-example-nested-batch"
+version = "0.1.0"
+description = "Nested aggregation: school -> classes -> students using nested Flows."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["branchlayerflow"]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

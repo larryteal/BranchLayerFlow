@@ -1,0 +1,13 @@
+[project]
+name = "blf-example-lead-generation"
+version = "0.1.0"
+description = "Sales pipeline: scrape -> enrich -> score -> personalise emails for high-fit leads."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "branchlayerflow",
+    "openai>=1.0",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

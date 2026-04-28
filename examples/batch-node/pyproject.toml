@@ -1,0 +1,10 @@
+[project]
+name = "blf-example-batch-node"
+version = "0.1.0"
+description = "CSV sales aggregation: split a large CSV into chunks, process each, combine."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["branchlayerflow"]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

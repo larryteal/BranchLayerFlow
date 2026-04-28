@@ -1,0 +1,14 @@
+[project]
+name = "blf-example-tool-search"
+version = "0.1.0"
+description = "Wrap web search as a tool. Search agent fetches results, analyser agent summarises and proposes follow-ups."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "branchlayerflow",
+    "openai>=1.0",
+    "google-search-results>=2.4",
+]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

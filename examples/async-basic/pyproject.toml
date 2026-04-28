@@ -1,0 +1,10 @@
+[project]
+name = "blf-example-async-basic"
+version = "0.1.0"
+description = "Async recipe finder: 3 async agents that fetch -> suggest -> ask for approval, looping back on rejection."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["branchlayerflow"]
+
+[tool.uv.sources]
+branchlayerflow = { workspace = true }

@@ -72,6 +72,10 @@ members = [
     "blf-example-visualization",
     "blf-example-voice-chat",
     "blf-example-workflow",
+    "blf-showcase-auto-researcher",
+    "blf-showcase-deep-research",
+    "blf-showcase-react-agent",
+    "blf-showcase-wide-research",
     "branchlayerflow",
     "tests",
     "turtle-soup",
@@ -1122,6 +1126,74 @@ requires-dist = [
     { name = "branchlayerflow", editable = "." },
     { name = "openai", specifier = ">=1.0" },
     { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
+name = "blf-showcase-auto-researcher"
+version = "0.1.0"
+source = { virtual = "examples/blf-auto-researcher" }
+dependencies = [
+    { name = "branchlayerflow" },
+    { name = "httpx" },
+    { name = "openai" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "branchlayerflow", editable = "." },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "openai", specifier = ">=1.0" },
+]
+
+[[package]]
+name = "blf-showcase-deep-research"
+version = "0.1.0"
+source = { virtual = "examples/blf-deep-research" }
+dependencies = [
+    { name = "branchlayerflow" },
+    { name = "httpx" },
+    { name = "openai" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "branchlayerflow", editable = "." },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "openai", specifier = ">=1.0" },
+]
+
+[[package]]
+name = "blf-showcase-react-agent"
+version = "0.1.0"
+source = { virtual = "examples/blf-react-agent" }
+dependencies = [
+    { name = "branchlayerflow" },
+    { name = "httpx" },
+    { name = "openai" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "branchlayerflow", editable = "." },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "openai", specifier = ">=1.0" },
+]
+
+[[package]]
+name = "blf-showcase-wide-research"
+version = "0.1.0"
+source = { virtual = "examples/blf-wide-research" }
+dependencies = [
+    { name = "branchlayerflow" },
+    { name = "httpx" },
+    { name = "openai" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "branchlayerflow", editable = "." },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "openai", specifier = ">=1.0" },
 ]
 
 [[package]]

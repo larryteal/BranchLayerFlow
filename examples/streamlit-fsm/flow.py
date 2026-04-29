@@ -1,7 +1,14 @@
 """Image-gen FSM driven one transition per Streamlit interaction.
 
-Each `tick(store)` call advances the FSM by exactly one BLF agent.
-Streamlit owns the rendering loop; BLF owns the state transitions.
+Each `step(store)` call advances the FSM by running exactly one BLF
+agent, picked from `store["state"]`. Streamlit owns the rendering loop;
+BLF owns the state transitions.
+
+States:
+  input       -> waiting for prompt (UI only)
+  generating  -> run GenerateAgent
+  review      -> waiting for the user (UI only); decision triggers next step
+  final       -> done (UI only)
 """
 
 from collections import deque
@@ -18,32 +25,36 @@ class GenerateAgent(BaseAgent):
         store["state"] = "review"
 
 
-class ReviewAgent(BaseAgent):
-    """No-op holder; UI sets store['decision'] and re-runs."""
+class DecisionAgent(BaseAgent):
+    """Reads `store['decision']` (set by the UI) and routes."""
 
     def takeover(self, store: Any) -> None:
-        if "decision" not in store:
-            store["state"] = "review"  # waiting for the user
+        decision = store.pop("decision", None)
+        if decision == "approve":
+            store["state"] = "final"
+        elif decision == "reject":
+            store["state"] = "generating"
 
     def handoff(self, store: Any) -> Optional[Tuple[BaseAgent, ...]]:
-        if store.get("decision") == "approve":
-            store["state"] = "final"
-            return ()
-        if store.get("decision") == "reject":
-            store["state"] = "generating"
-            store.pop("decision", None)
+        if store["state"] == "generating":
             return (self.successors["generate"],)
         return ()
 
 
-def build_imgflow() -> BaseFlow:
-    g = GenerateAgent(meta=BaseMeta(name="generate"))
-    r = ReviewAgent(meta=BaseMeta(name="review"))
-    g >> r
-    r >> g
-    return BaseFlow(meta=BaseMeta(name="imgflow"), branches=(g,))
-
-
 def step(store: Any) -> None:
-    """Drain the flow; each call advances until it next blocks for input."""
-    deque(build_imgflow()(store=store), maxlen=0)
+    """Advance the FSM by one transition based on the current state."""
+    state = store.get("state", "input")
+    if state == "generating":
+        deque(BaseFlow(
+            meta=BaseMeta(name="gen_flow"),
+            branches=(GenerateAgent(meta=BaseMeta(name="generate")),),
+        )(store=store), maxlen=0)
+    elif state == "review":
+        gen = GenerateAgent(meta=BaseMeta(name="generate"))
+        dec = DecisionAgent(meta=BaseMeta(name="decision"))
+        dec >> gen
+        deque(BaseFlow(
+            meta=BaseMeta(name="dec_flow"),
+            branches=(dec,),
+        )(store=store), maxlen=0)
+    # input / final: nothing to advance

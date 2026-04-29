@@ -217,4 +217,5 @@ examples/*/tasks.sqlite
 examples/*/shop.sqlite
 examples/*/resumes/
 examples/*/sandbox/
+examples/*/out.png
 .DS_Store

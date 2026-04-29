@@ -35,27 +35,35 @@ ReportAgent              dumps output/report.md + output/journal.tsv
 | **Human-edited control file** | `program.md`. Topic, mutation menu, stop conditions, hard constraints. The loop body itself is contract. |
 | **Non-stopping loop** | `SelectAgent.handoff` returns either a fresh beam (continue) or `ReportAgent` (stop). No interactive checkpoints. |
 
-## The judge: per-axis, language-agnostic
+## The judge: anti-hallucination + on-topic, language-agnostic
 
-The judge does **not** use word count as a quality proxy. It scores six
-independent axes, each with explicit criteria, and returns the weakest
-axis plus a suggested next mutation -- so the proposer targets the
-dimension that's actually limiting the score, not a vague global "it's
-not great" signal.
+The judge does NOT use word count or fact count as a quality proxy --
+those rubrics incentivize fabrication and topic drift. Instead it scores
+six independent axes, each with explicit criteria, and returns the
+weakest axis plus a suggested next mutation. The two largest axes
+(50 of 100 points combined) are **TOPIC_FIDELITY** and **FACT_GROUNDING**.
 
 | Axis | Max | What it measures |
 |---|---|---|
-| **Coverage**    | 20 | Are all important sub-topics addressed? |
-| **Specificity** | 25 | Count of concrete facts (numbers, dates, named entities, version strings, URLs). Generic prose does not count. |
-| **Sourcing**    | 15 | Claims grounded in verbatim WEB FACTS URLs. Invented URLs -> hard rejection. |
-| **Structure**   | 10 | TL;DR + named sections + good balance |
-| **Depth**       | 20 | Real synthesis (comparisons, mechanisms, tradeoffs) vs. listing |
-| **Novelty**     | 10 | Non-obvious angles vs. consensus summary |
+| **TOPIC_FIDELITY** | 25 | Does the report answer the LITERAL question? Off-topic sections actively *deduct* points (~3 per drifting section). |
+| **FACT_GROUNDING** | 25 | Each substantive claim must be supportable by a WEB FACT snippet. Unsupported claims `-2` each, contradicted `-5` each, invented URLs `-5` each (and floor at 0). This is the anti-hallucination axis. |
+| **Coverage**       | 15 | Within the on-topic scope, do all major sub-aspects get addressed? Tangential coverage does not count. |
+| **Depth**          | 15 | Real synthesis (comparisons, mechanisms, tradeoffs) vs. listing |
+| **Structure**      | 10 | TL;DR + named sections + good balance |
+| **Novelty**        | 10 | Non-obvious framings within scope |
 
 Each candidate's per-axis breakdown is printed every round and stored on
-the journal, so plateau diagnosis is mechanical: when the best report
-plateaus, the per-axis numbers tell you exactly which dimension the
-current model can no longer push.
+the journal -- when the best report plateaus, the per-axis numbers tell
+you exactly which dimension is limiting it.
+
+### Note on grounding strength
+
+WEB FACTS are search-result snippets (titles + descriptions), not full
+page content. The judge can verify claims that appear in the snippet
+text or URL but cannot verify claims that would require reading the
+full page. Use a stronger judge model (`JUDGE_MODEL=gpt-4o`) to push
+the FACT_GROUNDING ceiling -- a stronger model reads the snippets more
+carefully and is harder to fool with plausible-sounding fabrications.
 
 ## Why BranchLayerFlow specifically
 

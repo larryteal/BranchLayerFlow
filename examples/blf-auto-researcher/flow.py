@@ -27,6 +27,7 @@ primitive lives entirely in `SelectAgent.takeover`.
 """
 
 import asyncio
+import re
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
@@ -44,27 +45,48 @@ from utils import chat, web_search
 # ----- Seed: multi-angle facts + initial draft + initial score -----
 
 ANGLE_PROMPT = """\
-Output exactly 4 narrow web-search angles for the topic. Each angle should
-target a distinct facet (background, current state, evidence/specifics,
-edge cases / criticisms). One angle per line, no numbering, no quotes.\
+Output exactly 4 narrow web-search angles that DIRECTLY inform the topic
+question. Each angle should be a specific search query that surfaces
+evidence relevant to the question AS LITERALLY ASKED.
+
+Do NOT drift into tangential topics. For example, for a "what is the
+technical architecture / what's new" question, do NOT search for market
+impact, business applications, company history, or industry trends --
+those are off-topic and will be penalized later.
+
+One angle per line, no numbering, no quotes.\
 """
 
 DRAFT_SYSTEM = """\
-Write a comprehensive, well-cited research report on the topic using the
-WEB FACTS as the source of truth. Goals (in priority order):
+Write a research report that DIRECTLY answers the topic question, using
+ONLY the WEB FACTS as the source of truth.
 
-  1. COVERAGE: address every major sub-topic
-  2. SPECIFICITY: pack each paragraph with concrete facts -- numbers,
-     dates, named entities, version strings, URLs from WEB FACTS
-  3. SOURCING: cite verbatim URLs from WEB FACTS in markdown link form
-     [text](url); never invent URLs
-  4. STRUCTURE: TL;DR + 4-6 H2 sections + a short `## Caveats` at the end
-  5. DEPTH: synthesize across sources -- comparisons, tradeoffs, mechanisms
-  6. NOVELTY: surface non-obvious framings or under-reported angles
+Two non-negotiable rules (the judge will heavily penalize violations):
 
-Do NOT pad with filler. Do NOT invent URLs. If a claim has no source in
-WEB FACTS, drop it or hedge it explicitly. Write in the same language as
-the topic.\
+  1. STAY ON THE LITERAL QUESTION. Every section must directly serve the
+     question. Do NOT add tangential content (market impact, company
+     history, business applications, industry trends, future speculation
+     unrelated to the asked-about technology) unless the question
+     explicitly asks for it.
+
+  2. NEVER FABRICATE FACTS. Every specific number, date, named entity,
+     version string, technique name, or URL in your output must come
+     from WEB FACTS. If WEB FACTS doesn't contain a fact, do NOT include
+     it -- hedge ("according to limited information") or simply omit.
+     A short, true, on-topic report scores far higher than a long one
+     padded with invented specifics.
+
+Goals (in priority order, matching the judge's axis weights):
+
+  1. TOPIC FIDELITY (25 pts):  answer the literal question; nothing tangential
+  2. FACT GROUNDING (25 pts):  every claim traceable to a WEB FACT snippet
+  3. COVERAGE within scope (15 pts): hit the major on-topic sub-aspects
+  4. DEPTH (15 pts):           synthesize across sources where they connect
+  5. STRUCTURE (10 pts):       TL;DR + named sections + `## Caveats` at end
+  6. NOVELTY (10 pts):         non-obvious framings within scope
+
+Cite verbatim URLs from WEB FACTS in markdown link form [text](url).
+Write in the same language as the topic. Do NOT pad with filler.\
 """
 
 
@@ -176,22 +198,42 @@ class SeedAgent(AsyncBaseAgent):
 PROPOSE_SYSTEM = """\
 You are mutating a research report to maximize a strict per-axis judge.
 
-Pick ONE substantial mutation that targets the WEAKEST AXIS reported by
-the judge. Quality over cosmetic change: the judge does not reward
-length, formatting, or polish for its own sake -- it rewards comprehensive
-COVERAGE, dense SPECIFICITY (concrete facts), tight SOURCING (verbatim
-URLs from WEB FACTS), clean STRUCTURE, real analytical DEPTH, and
-NOVELTY beyond consensus.
+The two highest-weighted axes (50 of 100 points combined) are:
 
-Hard rules:
+  TOPIC_FIDELITY (25)  -- does the report answer the LITERAL question?
+                          Off-topic sections are actively penalized.
+  FACT_GROUNDING (25)  -- is every specific claim supported by WEB FACTS?
+                          Each unsupported claim costs 2 points; each
+                          contradicted or invented one costs 5.
+
+This means:
+
+  - If the weakest axis is TOPIC_FIDELITY, REMOVE off-topic sections.
+    Do not add more material -- trim drift, refocus the remaining text
+    on the literal question.
+
+  - If the weakest axis is FACT_GROUNDING, REMOVE unsupported claims and
+    replace them with claims you can ground in WEB FACTS verbatim. If
+    you cannot ground a claim, hedge it ("limited evidence suggests")
+    or drop it. Do not invent numbers, dates, names, version strings,
+    techniques, or URLs to look more specific.
+
+  - For the smaller axes (Coverage, Depth, Structure, Novelty), make
+    targeted additions, but every addition must be on-topic AND grounded.
+
+Hard rules (judge will hard-reject violations):
+
   - Cite ONLY URLs that appear verbatim in WEB FACTS. Never invent URLs.
-  - Never fabricate facts. If WEB FACTS don't support a claim, hedge or drop.
+  - Never invent numbers, dates, names, version strings, or techniques.
+    "Looks plausible" is not the standard; "appears in WEB FACTS" is.
+  - Stay on the literal question. Tangential coverage is a deduction,
+    not a bonus.
   - Mutations must be DIFFERENT from ones already in the journal -- the
-    judge already saw those, and tried-and-revert ed mutations won't move
-    the score.
+    judge already saw those.
   - Write in the same language as TOPIC.
-  - Do NOT pad with filler. Do NOT pad with platitudes. Length is not a
-    proxy for quality; the judge sees through it.
+  - Length is NOT a quality axis. Padding will lose, not gain, points
+    (FACT_GROUNDING punishes invented specifics; TOPIC_FIDELITY punishes
+    off-topic padding).
 
 Reply with EXACTLY this format and nothing else:
 MUTATION: <one short sentence: VERB + WHAT, specific>
@@ -207,6 +249,8 @@ def _parse_propose(reply: str) -> dict:
     else:
         mutation = "(unparseable)"
     new_report = new_report.strip() or reply.strip()
+    # Strip any stray separator the LLM accidentally re-emitted at the tail.
+    new_report = re.sub(r"\n*-{2,}\s*REPORT\s*-{2,}\s*$", "", new_report).strip()
     return {"mutation": mutation[:240], "report": new_report}
 
 

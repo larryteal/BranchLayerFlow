@@ -1,7 +1,8 @@
 """Autoresearch hill-climber on a research report.
 
   SeedAgent
-       |  fetch one-shot web facts; init journal, best=-1
+       |  multi-angle web fetch -> rich web_facts
+       |  initial draft from facts -> first scored report
        v
   ParallelBeamFlow         (K proposers in parallel, K = beam)
        |   each branch is a slot sub-flow:
@@ -20,6 +21,7 @@ The loop body is `select.handoff(store)` returning either a fresh beam
 primitive lives entirely in `SelectAgent.takeover`.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
@@ -34,7 +36,68 @@ from judge import judge
 from utils import chat, web_search
 
 
-# ----- Seed: one-shot fact fetch + state init -----
+# ----- Seed: multi-angle facts + initial draft + initial score -----
+
+ANGLE_PROMPT = """\
+Output exactly 4 narrow web-search angles for the topic. Each angle should
+target a distinct facet (background, current state, evidence/specifics,
+edge cases / criticisms). One angle per line, no numbering, no quotes.\
+"""
+
+DRAFT_SYSTEM = """\
+Write a comprehensive, well-cited research report on the topic using the
+WEB FACTS as the source of truth. Hard requirements:
+
+  - Aim for 700-1200 words
+  - Use 4-6 H2 sections plus a one-paragraph TL;DR up top
+  - Pack each paragraph with specific facts: numbers, dates, version
+    strings, named entities, URLs from WEB FACTS
+  - Cite verbatim URLs from WEB FACTS in markdown link form [text](url)
+  - End with a short `## Caveats` section listing what is unknown or contested
+  - No filler ("in conclusion", "in today's world", etc.)
+
+Do NOT invent URLs. If a claim has no source in WEB FACTS, either drop it
+or hedge it explicitly.\
+"""
+
+
+async def _collect_facts(topic: str) -> list:
+    """Fan out to 4 angle-searches in parallel, dedupe by URL."""
+    try:
+        angles_reply = await chat(
+            [
+                {"role": "system", "content": ANGLE_PROMPT},
+                {"role": "user", "content": topic},
+            ],
+            temperature=0.3,
+        )
+    except Exception as e:
+        print(f"[seed] angle planning failed: {e}; falling back to topic-only")
+        angles_reply = topic
+    angles = [
+        ln.strip(" -*\"'\t")
+        for ln in angles_reply.splitlines()
+        if ln.strip()
+    ][:4] or [topic]
+
+    async def _safe(q):
+        try:
+            return await web_search(q, max_results=10)
+        except Exception as e:
+            print(f"[seed] web_search({q!r}) failed: {e}")
+            return []
+
+    bundles = await asyncio.gather(*[_safe(a) for a in angles])
+    seen = set()
+    facts = []
+    for bundle in bundles:
+        for r in bundle:
+            url = r.get("url")
+            if url and url not in seen:
+                seen.add(url)
+                facts.append(r)
+    return facts
+
 
 class SeedAgent(AsyncBaseAgent):
     async def takeover(self, store: Any) -> None:
@@ -45,17 +108,41 @@ class SeedAgent(AsyncBaseAgent):
         store.setdefault("streak_no_improvement", 0)
         store.setdefault("journal", [])
         store["candidates"] = {}
-        try:
-            store["web_facts"] = await web_search(store["topic"], max_results=10)
-        except Exception as e:
-            print(f"[seed] web_search failed: {e}")
-            store["web_facts"] = []
+
+        store["web_facts"] = await _collect_facts(store["topic"])
         print(
             f"\n[seed] topic={store['topic']!r}\n"
             f"       budget={store['budget']} beam={store['beam']} "
             f"target={store['target_score']} patience={store['patience']}\n"
-            f"       fetched {len(store['web_facts'])} web facts"
+            f"       gathered {len(store['web_facts'])} unique facts across angles"
         )
+
+        facts_block = "\n".join(
+            f"- {r.get('title','')} :: {r.get('description','')} ({r.get('url','')})"
+            for r in store["web_facts"]
+        ) or "(no facts)"
+        draft = await chat(
+            [
+                {"role": "system", "content": DRAFT_SYSTEM},
+                {"role": "user", "content": f"TOPIC: {store['topic']}\n\nWEB FACTS:\n{facts_block}"},
+            ],
+            temperature=0.4,
+        )
+        store["report"] = (draft or "").strip()
+
+        score, breakdown = await judge(store["report"], store["topic"], store["web_facts"])
+        store["best_score"] = score
+        store["best_breakdown"] = breakdown
+        store["journal"].append({
+            "round": 0,
+            "slot": -1,
+            "decision": "seed",
+            "candidate_score": score,
+            "current_best_before": -1.0,
+            "mutation": "Initial draft from multi-angle web facts",
+            "breakdown": breakdown,
+        })
+        print(f"[seed] initial draft scored {score:.1f}: {breakdown}")
 
     async def handoff(self, store: Any) -> Optional[Tuple[AsyncBaseAgent, ...]]:
         beam = build_beam_flow(store["beam"])
@@ -66,57 +153,95 @@ class SeedAgent(AsyncBaseAgent):
 # ----- Beam: K parallel proposers, each is Propose -> Score -----
 
 PROPOSE_SYSTEM = """\
-You are mutating a research report to maximize its judge score.
+You are mutating a research report to maximize a strict judge's score.
+The judge rewards SPECIFICS, depth, and verbatim citations from WEB FACTS.
+It penalizes generic prose, platitudes, and short / thin reports
+(reports under 700 words are hard-capped at 78).
 
-Pick ONE small, motivated mutation. Smaller diffs are better -- a 1-point
-gain from removing fluff beats a 1-point gain that adds a section. Cite
-sources only from the WEB FACTS provided. Do not invent URLs.
+Pick ONE substantial mutation. Each mutation MUST do at least one of:
+  - Add >= 150 words of new substantive content (numbers, dates, named
+    entities, version strings, URLs)
+  - Replace a section of generic prose with concrete, cited claims
+  - Add a missing major angle the topic obviously requires
+  - Restructure for genuine improvement (not cosmetic reordering)
+  - Aggressively cut fluff -- deletion is a valid mutation if it raises
+    specificity density without dropping below the word-count caps
+
+DO NOT propose:
+  - "Add a citation" without naming what gets cited
+  - "Add an introduction" without saying what it contains
+  - Cosmetic reformatting
+  - Mutations similar to ones already KEPT (already in current report)
+  - Mutations similar to ones already REVERTED (already failed)
+
+Cite ONLY URLs that appear verbatim in WEB FACTS. Never invent URLs.
 
 Reply with EXACTLY this format and nothing else:
-MUTATION: <one short sentence describing the change>
+MUTATION: <one short sentence: VERB + WHAT, specific>
 ---REPORT---
-<the full new report markdown>
+<full new report markdown, with substantive changes vs current>
 """
+
+
+def _next_cap_target(words: int) -> str:
+    """Tell the proposer which judge word-count cap is currently binding."""
+    if words < 200:
+        return "current report is below 200 words; judge caps at 30. Push above 200 immediately."
+    if words < 400:
+        return f"current report is {words} words; judge caps at 60 below 400. Push above 400."
+    if words < 700:
+        return f"current report is {words} words; judge caps at 78 below 700. Push above 700."
+    if words < 1100:
+        return f"current report is {words} words; no cap binding, but more depth/specifics still help."
+    return f"current report is {words} words; long enough -- focus on density, not length."
 
 
 class ProposeAgent(AsyncBaseAgent):
     async def takeover(self, store: Any) -> None:
         slot = self.meta.slot
         history_lines = []
-        for j in store["journal"][-8:]:
+        for j in store["journal"][-10:]:
             history_lines.append(
                 f"  r{j['round']} {j['decision']:<6} score={j['candidate_score']:>5.1f} "
-                f":: {j['mutation'][:80]}"
+                f":: {j['mutation'][:90]}"
             )
         history = "\n".join(history_lines) or "  (no prior rounds)"
         facts = "\n".join(
-            f"- {r.get('title','')} :: {r.get('description','')[:160]}"
+            f"- {r.get('title','')} :: {r.get('description','')[:200]} ({r.get('url','')})"
             for r in store.get("web_facts", [])
         ) or "(no facts)"
+        words = len((store["report"] or "").split())
         body = (
             f"TOPIC: {store['topic']}\n\n"
             f"CURRENT REPORT (best so far, score={store['best_score']:.1f}, "
-            f"breakdown: {store['best_breakdown']}):\n"
+            f"{words} words; judge breakdown: {store['best_breakdown']})\n"
+            f"BINDING CONSTRAINT: {_next_cap_target(words)}\n\n"
             f"{store['report'] or '(empty)'}\n\n"
             f"RECENT JOURNAL (most recent last):\n{history}\n\n"
             f"WEB FACTS (use only these for citations):\n{facts}\n\n"
-            f"You are slot {slot}. Make your mutation distinct from siblings if you can."
+            f"You are slot {slot} of {store['beam']}. Make your mutation distinct "
+            f"from sibling slots and from prior journal entries -- explore a "
+            f"different axis (depth, breadth, structure, density). If a word-count "
+            f"cap is binding, the only mutation that will move the score is one "
+            f"that pushes past that cap with substantive new content."
         )
         reply = await chat(
             [
                 {"role": "system", "content": PROPOSE_SYSTEM},
                 {"role": "user", "content": body},
             ],
-            temperature=0.7,
+            temperature=0.8,
         )
         mutation, _, new_report = reply.partition("---REPORT---")
-        mutation = mutation.replace("MUTATION:", "", 1).strip().splitlines()[0] if mutation else "(unparseable)"
+        if mutation:
+            mutation = mutation.replace("MUTATION:", "", 1).strip().splitlines()[0]
+        else:
+            mutation = "(unparseable)"
         new_report = new_report.strip()
         if not new_report:
-            # Couldn't parse; fall back to the whole reply as the report.
             new_report = reply.strip()
         store.setdefault("candidates", {})[slot] = {
-            "mutation": mutation[:200],
+            "mutation": mutation[:240],
             "report": new_report,
         }
 
@@ -135,7 +260,7 @@ class ScoreAgent(AsyncBaseAgent):
         cand["breakdown"] = breakdown
         print(
             f"  [r{store['round']+1} slot {slot}] score={score:5.1f}  "
-            f"mut={cand['mutation'][:70]}"
+            f"mut={cand['mutation'][:80]}"
         )
 
 
@@ -146,9 +271,6 @@ class ParallelBeamFlow(AsyncParallelBaseFlow):
 
 
 def _build_slot(slot_idx: int) -> AsyncBaseFlow:
-    # Names inside a slot don't need to be globally unique; per-instance
-    # successors dict keys on meta.name. Keep them short so the handoff
-    # lookups (`self.successors["score"]`) work uniformly across slots.
     propose = ProposeAgent(meta=BaseMeta(name="propose", slot=slot_idx))
     score = ScoreAgent(meta=BaseMeta(name="score", slot=slot_idx))
     propose >> score

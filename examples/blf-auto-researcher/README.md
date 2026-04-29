@@ -9,7 +9,8 @@ in parallel; the highest scorer wins the round.
 
 ```
 SeedAgent
-   |  one-shot web search -> store["web_facts"] (the locked reference set)
+   |  4 parallel angle-searches -> deduped web_facts (the locked reference set)
+   |  initial draft from facts -> first scored report on the journal
    v
 ParallelBeamFlow         beam = K parallel slot sub-flows
    |   each slot:        ProposeAgent -> ScoreAgent
@@ -82,3 +83,16 @@ Everything that controls *how the loop runs* is exposed:
 
 Everything that controls *what the loop optimizes for* lives in
 `program.md` (mutation menu, constraints) and `judge.py` (the rubric).
+
+### Asymmetric judge (recommended)
+
+Use a stronger model for the judge than for the proposers -- a strict TA
+grading a student is the dynamic that produces deeper reports:
+
+```bash
+export OPENAI_MODEL=gpt-4o-mini    # fast/cheap proposer
+export JUDGE_MODEL=gpt-4o          # stricter, more discerning judge
+```
+
+With a same-model setup the judge tends to plateau early (the proposer's
+output is exactly what the judge would write itself).

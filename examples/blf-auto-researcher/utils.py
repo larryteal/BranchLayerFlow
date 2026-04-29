@@ -1,8 +1,7 @@
 """Shared LLM + web-search helpers."""
 
 import os
-import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import httpx
 from openai import AsyncOpenAI
@@ -40,22 +39,3 @@ async def web_search(query: str, max_results: int = 10) -> List[Dict[str, str]]:
         r = await c.get(f"{WEB_SEARCH_BASE}/search", params={"q": query, "max": max_results})
         r.raise_for_status()
         return r.json().get("results", [])
-
-
-def parse_score(text: str) -> Tuple[float, str]:
-    """Pull `SCORE: <num>` and `BREAKDOWN: <line>` out of a judge reply.
-
-    Tolerates extra prose. Returns (score, one-line breakdown).
-    """
-    score = -1.0
-    m = re.search(r"SCORE\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
-    if m:
-        try:
-            score = float(m.group(1))
-        except ValueError:
-            pass
-    breakdown = ""
-    bm = re.search(r"BREAKDOWN\s*[:=]\s*(.+?)(?:\n|$)", text, re.IGNORECASE | re.DOTALL)
-    if bm:
-        breakdown = bm.group(1).strip().splitlines()[0][:200]
-    return score, breakdown

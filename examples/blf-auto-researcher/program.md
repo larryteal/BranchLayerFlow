@@ -9,20 +9,24 @@ contract. The loop reads this file, applies the constraints, then climbs.
 Produce the highest-scoring research report on the topic supplied via
 the command line, where "score" is whatever `judge.py` returns.
 
-## Mutation menu
+## Mutation menu (organized by which judge axis they target)
 
-Each round, every proposer picks ONE small, motivated mutation from this
-menu (or invents a similarly small one). Smaller diffs are preferred --
-a 0.5-point improvement that adds a paragraph beats a 1-point improvement
-that bloats the report by a section.
+Every round, each proposer picks ONE mutation that targets the axis the
+judge surfaced as weakest. Match the mutation to the axis -- a "Specificity"
+mutation will not help when the bottleneck is "Novelty".
 
-- Add a missing factual section the topic obviously requires
-- Cite a specific source from the web facts for an unsupported claim
-- Tighten or remove a fluffy paragraph
-- Rebalance the report structure (move, merge, or split sections)
-- Deepen or correct a specific claim that the judge breakdown flagged
-- Remove redundancy across sections
-- Fix a structural issue (missing TL;DR, weak intro, no caveats)
+**Coverage** -- add a missing major sub-topic the question implies
+**Specificity** -- replace a generic paragraph with concrete facts (numbers,
+   dates, named entities, version strings, URLs from WEB FACTS)
+**Sourcing** -- attach a verbatim WEB FACTS URL to a major uncited claim
+**Structure** -- TL;DR up top, well-named sections, balance, scannable flow
+**Depth** -- swap listing for synthesis: explain mechanisms, compare
+   tradeoffs, show why X works where Y doesn't
+**Novelty** -- surface a non-obvious angle: a critique, a contrarian
+   reading, an under-reported detail, a connection across sources
+
+Length is NOT a quality axis. Padding will not raise the score; the
+Specificity axis penalizes thin reports automatically.
 
 ## Stop conditions
 

@@ -2,7 +2,7 @@
 
   SeedAgent
        |  multi-angle web fetch -> rich web_facts
-       |  initial draft from facts -> first scored report
+       |  initial draft from facts -> first scored report on the journal
        v
   ParallelBeamFlow         (K proposers in parallel, K = beam)
        |   each branch is a slot sub-flow:
@@ -15,6 +15,11 @@
        |
        v   else (target / budget / patience hit)
   ReportAgent              (dump output/report.md + output/journal.tsv)
+
+Each candidate is judged on six axes (Coverage / Specificity / Sourcing /
+Structure / Depth / Novelty). The proposer doesn't chase a vague global
+score; it targets the WEAKEST_AXIS surfaced by the judge, so the loop
+makes monotonic progress on the dimension that's actually limiting it.
 
 The loop body is `select.handoff(store)` returning either a fresh beam
 (continue) or the report agent (stop). No external scheduler. The keep/revert
@@ -46,18 +51,20 @@ edge cases / criticisms). One angle per line, no numbering, no quotes.\
 
 DRAFT_SYSTEM = """\
 Write a comprehensive, well-cited research report on the topic using the
-WEB FACTS as the source of truth. Hard requirements:
+WEB FACTS as the source of truth. Goals (in priority order):
 
-  - Aim for 700-1200 words
-  - Use 4-6 H2 sections plus a one-paragraph TL;DR up top
-  - Pack each paragraph with specific facts: numbers, dates, version
-    strings, named entities, URLs from WEB FACTS
-  - Cite verbatim URLs from WEB FACTS in markdown link form [text](url)
-  - End with a short `## Caveats` section listing what is unknown or contested
-  - No filler ("in conclusion", "in today's world", etc.)
+  1. COVERAGE: address every major sub-topic
+  2. SPECIFICITY: pack each paragraph with concrete facts -- numbers,
+     dates, named entities, version strings, URLs from WEB FACTS
+  3. SOURCING: cite verbatim URLs from WEB FACTS in markdown link form
+     [text](url); never invent URLs
+  4. STRUCTURE: TL;DR + 4-6 H2 sections + a short `## Caveats` at the end
+  5. DEPTH: synthesize across sources -- comparisons, tradeoffs, mechanisms
+  6. NOVELTY: surface non-obvious framings or under-reported angles
 
-Do NOT invent URLs. If a claim has no source in WEB FACTS, either drop it
-or hedge it explicitly.\
+Do NOT pad with filler. Do NOT invent URLs. If a claim has no source in
+WEB FACTS, drop it or hedge it explicitly. Write in the same language as
+the topic.\
 """
 
 
@@ -99,11 +106,19 @@ async def _collect_facts(topic: str) -> list:
     return facts
 
 
+def _format_axes(axes: dict) -> str:
+    if not axes:
+        return "(no axis breakdown)"
+    return " | ".join(f"{k} {v[0]}/{v[1]}" for k, v in axes.items())
+
+
 class SeedAgent(AsyncBaseAgent):
     async def takeover(self, store: Any) -> None:
         store.setdefault("report", "")
         store.setdefault("best_score", -1.0)
         store.setdefault("best_breakdown", "(initial)")
+        store.setdefault("best_axes", {})
+        store.setdefault("best_next_hint", "")
         store.setdefault("round", 0)
         store.setdefault("streak_no_improvement", 0)
         store.setdefault("journal", [])
@@ -130,9 +145,13 @@ class SeedAgent(AsyncBaseAgent):
         )
         store["report"] = (draft or "").strip()
 
-        score, breakdown = await judge(store["report"], store["topic"], store["web_facts"])
+        score, breakdown, axes, next_hint = await judge(
+            store["report"], store["topic"], store["web_facts"]
+        )
         store["best_score"] = score
         store["best_breakdown"] = breakdown
+        store["best_axes"] = axes
+        store["best_next_hint"] = next_hint
         store["journal"].append({
             "round": 0,
             "slot": -1,
@@ -142,7 +161,9 @@ class SeedAgent(AsyncBaseAgent):
             "mutation": "Initial draft from multi-angle web facts",
             "breakdown": breakdown,
         })
-        print(f"[seed] initial draft scored {score:.1f}: {breakdown}")
+        print(f"[seed] initial draft scored {score:.1f}")
+        print(f"       axes: {_format_axes(axes)}")
+        print(f"       next: {next_hint}")
 
     async def handoff(self, store: Any) -> Optional[Tuple[AsyncBaseAgent, ...]]:
         beam = build_beam_flow(store["beam"])
@@ -153,47 +174,40 @@ class SeedAgent(AsyncBaseAgent):
 # ----- Beam: K parallel proposers, each is Propose -> Score -----
 
 PROPOSE_SYSTEM = """\
-You are mutating a research report to maximize a strict judge's score.
-The judge rewards SPECIFICS, depth, and verbatim citations from WEB FACTS.
-It penalizes generic prose, platitudes, and short / thin reports
-(reports under 700 words are hard-capped at 78).
+You are mutating a research report to maximize a strict per-axis judge.
 
-Pick ONE substantial mutation. Each mutation MUST do at least one of:
-  - Add >= 150 words of new substantive content (numbers, dates, named
-    entities, version strings, URLs)
-  - Replace a section of generic prose with concrete, cited claims
-  - Add a missing major angle the topic obviously requires
-  - Restructure for genuine improvement (not cosmetic reordering)
-  - Aggressively cut fluff -- deletion is a valid mutation if it raises
-    specificity density without dropping below the word-count caps
+Pick ONE substantial mutation that targets the WEAKEST AXIS reported by
+the judge. Quality over cosmetic change: the judge does not reward
+length, formatting, or polish for its own sake -- it rewards comprehensive
+COVERAGE, dense SPECIFICITY (concrete facts), tight SOURCING (verbatim
+URLs from WEB FACTS), clean STRUCTURE, real analytical DEPTH, and
+NOVELTY beyond consensus.
 
-DO NOT propose:
-  - "Add a citation" without naming what gets cited
-  - "Add an introduction" without saying what it contains
-  - Cosmetic reformatting
-  - Mutations similar to ones already KEPT (already in current report)
-  - Mutations similar to ones already REVERTED (already failed)
-
-Cite ONLY URLs that appear verbatim in WEB FACTS. Never invent URLs.
+Hard rules:
+  - Cite ONLY URLs that appear verbatim in WEB FACTS. Never invent URLs.
+  - Never fabricate facts. If WEB FACTS don't support a claim, hedge or drop.
+  - Mutations must be DIFFERENT from ones already in the journal -- the
+    judge already saw those, and tried-and-revert ed mutations won't move
+    the score.
+  - Write in the same language as TOPIC.
+  - Do NOT pad with filler. Do NOT pad with platitudes. Length is not a
+    proxy for quality; the judge sees through it.
 
 Reply with EXACTLY this format and nothing else:
 MUTATION: <one short sentence: VERB + WHAT, specific>
 ---REPORT---
-<full new report markdown, with substantive changes vs current>
+<full new report markdown>
 """
 
 
-def _next_cap_target(words: int) -> str:
-    """Tell the proposer which judge word-count cap is currently binding."""
-    if words < 200:
-        return "current report is below 200 words; judge caps at 30. Push above 200 immediately."
-    if words < 400:
-        return f"current report is {words} words; judge caps at 60 below 400. Push above 400."
-    if words < 700:
-        return f"current report is {words} words; judge caps at 78 below 700. Push above 700."
-    if words < 1100:
-        return f"current report is {words} words; no cap binding, but more depth/specifics still help."
-    return f"current report is {words} words; long enough -- focus on density, not length."
+def _parse_propose(reply: str) -> dict:
+    mutation, _, new_report = reply.partition("---REPORT---")
+    if mutation:
+        mutation = mutation.replace("MUTATION:", "", 1).strip().splitlines()[0]
+    else:
+        mutation = "(unparseable)"
+    new_report = new_report.strip() or reply.strip()
+    return {"mutation": mutation[:240], "report": new_report}
 
 
 class ProposeAgent(AsyncBaseAgent):
@@ -210,20 +224,30 @@ class ProposeAgent(AsyncBaseAgent):
             f"- {r.get('title','')} :: {r.get('description','')[:200]} ({r.get('url','')})"
             for r in store.get("web_facts", [])
         ) or "(no facts)"
-        words = len((store["report"] or "").split())
+        cur_report = store["report"] or ""
+        axes = store.get("best_axes", {}) or {}
+        axes_line = _format_axes(axes)
+        weakest = ""
+        if axes:
+            weakest = min(axes, key=lambda a: axes[a][0] / max(axes[a][1], 1))
+        weakest_line = (
+            f"WEAKEST AXIS: {weakest} ({axes[weakest][0]}/{axes[weakest][1]})"
+            if weakest else "WEAKEST AXIS: (unknown)"
+        )
+        next_hint = store.get("best_next_hint", "")
         body = (
             f"TOPIC: {store['topic']}\n\n"
-            f"CURRENT REPORT (best so far, score={store['best_score']:.1f}, "
-            f"{words} words; judge breakdown: {store['best_breakdown']})\n"
-            f"BINDING CONSTRAINT: {_next_cap_target(words)}\n\n"
-            f"{store['report'] or '(empty)'}\n\n"
+            f"CURRENT REPORT (best so far, score={store['best_score']:.1f})\n"
+            f"AXES: {axes_line}\n"
+            f"{weakest_line}\n"
+            f"JUDGE'S SUGGESTED NEXT MUTATION: {next_hint or '(none)'}\n\n"
+            f"--- CURRENT REPORT START ---\n{cur_report or '(empty)'}\n--- CURRENT REPORT END ---\n\n"
             f"RECENT JOURNAL (most recent last):\n{history}\n\n"
-            f"WEB FACTS (use only these for citations):\n{facts}\n\n"
-            f"You are slot {slot} of {store['beam']}. Make your mutation distinct "
-            f"from sibling slots and from prior journal entries -- explore a "
-            f"different axis (depth, breadth, structure, density). If a word-count "
-            f"cap is binding, the only mutation that will move the score is one "
-            f"that pushes past that cap with substantive new content."
+            f"WEB FACTS (use only these URLs for citations):\n{facts}\n\n"
+            f"You are slot {slot} of {store['beam']}. Propose a mutation that raises "
+            f"the WEAKEST AXIS. If your siblings are likely to also target that axis, "
+            f"differentiate by attacking it from a different angle "
+            f"(content vs. structure vs. citations vs. synthesis)."
         )
         reply = await chat(
             [
@@ -232,18 +256,8 @@ class ProposeAgent(AsyncBaseAgent):
             ],
             temperature=0.8,
         )
-        mutation, _, new_report = reply.partition("---REPORT---")
-        if mutation:
-            mutation = mutation.replace("MUTATION:", "", 1).strip().splitlines()[0]
-        else:
-            mutation = "(unparseable)"
-        new_report = new_report.strip()
-        if not new_report:
-            new_report = reply.strip()
-        store.setdefault("candidates", {})[slot] = {
-            "mutation": mutation[:240],
-            "report": new_report,
-        }
+        parsed = _parse_propose(reply)
+        store.setdefault("candidates", {})[slot] = parsed
 
     async def handoff(self, store: Any) -> Optional[Tuple[AsyncBaseAgent, ...]]:
         return (self.successors["score"],)
@@ -253,14 +267,16 @@ class ScoreAgent(AsyncBaseAgent):
     async def takeover(self, store: Any) -> None:
         slot = self.meta.slot
         cand = store["candidates"][slot]
-        score, breakdown = await judge(
+        score, breakdown, axes, next_hint = await judge(
             cand["report"], store["topic"], store.get("web_facts", [])
         )
         cand["score"] = score
         cand["breakdown"] = breakdown
+        cand["axes"] = axes
+        cand["next_hint"] = next_hint
         print(
             f"  [r{store['round']+1} slot {slot}] score={score:5.1f}  "
-            f"mut={cand['mutation'][:80]}"
+            f"axes={_format_axes(axes)}  mut={cand['mutation'][:60]}"
         )
 
 
@@ -307,6 +323,8 @@ class SelectAgent(AsyncBaseAgent):
             store["report"] = best["report"]
             store["best_score"] = best["score"]
             store["best_breakdown"] = best["breakdown"]
+            store["best_axes"] = best.get("axes", {})
+            store["best_next_hint"] = best.get("next_hint", "")
             store["streak_no_improvement"] = 0
             store["last_decision"] = "keep"
             print(
@@ -362,6 +380,7 @@ class ReportAgent(AsyncBaseAgent):
         print(
             f"\n=== Done ===\n"
             f"best_score = {store['best_score']:.1f}\n"
+            f"axes       = {_format_axes(store.get('best_axes', {}))}\n"
             f"rounds run = {store['round']}\n"
             f"report     -> {report_path}\n"
             f"journal    -> {journal_path}"

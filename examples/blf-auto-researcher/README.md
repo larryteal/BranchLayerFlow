@@ -27,13 +27,35 @@ ReportAgent              dumps output/report.md + output/journal.tsv
 
 | Piece | Where it lives |
 |---|---|
-| **Locked evaluator** | `judge.py` -- one scalar 0-100, fixed prompt, `temperature=0`. Never edit during a run. |
+| **Locked evaluator** | `judge.py` -- per-axis rubric, fixed prompt, `temperature=0`. Never edit during a run. |
 | **Single mutable artifact** | `store["report"]` (dumped to `output/report.md`). Each candidate is a full proposed replacement. |
-| **Per-trial budget** | One LLM proposal + one judge call per slot per round. Total bound = `budget x beam`. |
+| **Per-trial budget** | 1 LLM proposal + 1 judge call per slot per round. Total bound = `budget x beam x 2`. |
 | **Keep/revert primitive** | `SelectAgent`. `keep` iff `candidate_score > best_score`, else discard. |
 | **Append-only journal** | `store["journal"]` -> `output/journal.tsv` with `round, slot, decision, candidate_score, current_best_before, mutation, breakdown`. |
 | **Human-edited control file** | `program.md`. Topic, mutation menu, stop conditions, hard constraints. The loop body itself is contract. |
 | **Non-stopping loop** | `SelectAgent.handoff` returns either a fresh beam (continue) or `ReportAgent` (stop). No interactive checkpoints. |
+
+## The judge: per-axis, language-agnostic
+
+The judge does **not** use word count as a quality proxy. It scores six
+independent axes, each with explicit criteria, and returns the weakest
+axis plus a suggested next mutation -- so the proposer targets the
+dimension that's actually limiting the score, not a vague global "it's
+not great" signal.
+
+| Axis | Max | What it measures |
+|---|---|---|
+| **Coverage**    | 20 | Are all important sub-topics addressed? |
+| **Specificity** | 25 | Count of concrete facts (numbers, dates, named entities, version strings, URLs). Generic prose does not count. |
+| **Sourcing**    | 15 | Claims grounded in verbatim WEB FACTS URLs. Invented URLs -> hard rejection. |
+| **Structure**   | 10 | TL;DR + named sections + good balance |
+| **Depth**       | 20 | Real synthesis (comparisons, mechanisms, tradeoffs) vs. listing |
+| **Novelty**     | 10 | Non-obvious angles vs. consensus summary |
+
+Each candidate's per-axis breakdown is printed every round and stored on
+the journal, so plateau diagnosis is mechanical: when the best report
+plateaus, the per-axis numbers tell you exactly which dimension the
+current model can no longer push.
 
 ## Why BranchLayerFlow specifically
 

@@ -218,4 +218,6 @@ examples/*/shop.sqlite
 examples/*/resumes/
 examples/*/sandbox/
 examples/*/out.png
+examples/*/output/
+examples/*/output_*/
 .DS_Store
